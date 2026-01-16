@@ -37,6 +37,9 @@ class InitOAuth implements InitStep {
   static final String TENANT = "tenant";
   static final String LINK_TO_EXISTING_OFFICE365_ACCOUNT = "link-to-existing-office365-accounts";
   static final String SERVICE_NAME = "service-name";
+  static final String TOKEN_URL = "token-url";
+  static final String AUTHORIZE_URL = "authorize-url";
+  static final String RESOURCE_URL = "resource-url";
   static String FIX_LEGACY_USER_ID_QUESTION = "Fix legacy user id, without oauth provider prefix?";
 
   private final ConsoleUI ui;
@@ -53,6 +56,7 @@ class InitOAuth implements InitStep {
   private final Section azureActiveDirectoryAuthProviderSection;
   private final Section airVantageOAuthProviderSection;
   private final Section phabricatorOAuthProviderSection;
+  private final Section uacOAuthProviderSection;
 
   @Inject
   InitOAuth(ConsoleUI ui, Section.Factory sections, @PluginName String pluginName) {
@@ -83,6 +87,8 @@ class InitOAuth implements InitStep {
         sections.get(PLUGIN_SECTION, pluginName + AirVantageOAuthService.CONFIG_SUFFIX);
     this.phabricatorOAuthProviderSection =
         sections.get(PLUGIN_SECTION, pluginName + PhabricatorOAuthService.CONFIG_SUFFIX);
+    this.uacOAuthProviderSection =
+        sections.get(PLUGIN_SECTION, pluginName + UacOAuthService.CONFIG_SUFFIX);
   }
 
   @Override
@@ -201,6 +207,16 @@ class InitOAuth implements InitStep {
             "Use Phabricator OAuth provider for Gerrit login ?");
     if (configurePhabricatorOAuthProvider && configureOAuth(phabricatorOAuthProviderSection)) {
       checkRootUrl(phabricatorOAuthProviderSection.string("Phabricator Root URL", ROOT_URL, null));
+    }
+
+    boolean configureUacOAuthProvider =
+        ui.yesno(
+            isConfigured(uacOAuthProviderSection),
+            "Use UAC OAuth provider for Gerrit login ?");
+    if (configureUacOAuthProvider && configureOAuth(uacOAuthProviderSection)) {
+      checkRootUrl(uacOAuthProviderSection.string("UAC Token URL", TOKEN_URL, null));
+      checkRootUrl(uacOAuthProviderSection.string("UAC Authorize URL", AUTHORIZE_URL, null));
+      checkRootUrl(uacOAuthProviderSection.string("UAC Resource URL", RESOURCE_URL, null));
     }
   }
 
