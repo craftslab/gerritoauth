@@ -98,8 +98,10 @@ The provider returns the following test user information:
 To use this fake provider with Gerrit, update your `gerrit.config`:
 
 ```ini
-[plugin "gerrit-oauth-provider"]
-    enabled = true
+[auth]
+    type = OAUTH
+[plugins]
+    allowRemoteAdmin = true
 [plugin "gerrit-oauth-provider-uac-oauth"]
     client-id = "your-client-id"
     client-secret = "your-client-secret"

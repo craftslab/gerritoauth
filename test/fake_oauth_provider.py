@@ -182,11 +182,35 @@ class OAuthRequestHandler(BaseHTTPRequestHandler):
                     if key not in params:
                         params[key] = value
 
+            # Check for Authorization header (HTTP Basic Auth)
+            auth_header = self.headers.get("Authorization", "")
+            if auth_header.startswith("Basic "):
+                import base64
+                try:
+                    decoded = base64.b64decode(auth_header[6:]).decode("utf-8")
+                    if ":" in decoded:
+                        basic_client_id, basic_client_secret = decoded.split(":", 1)
+                        if "client_id" not in params or not params["client_id"][0]:
+                            params["client_id"] = [basic_client_id]
+                        if "client_secret" not in params or not params["client_secret"][0]:
+                            params["client_secret"] = [basic_client_secret]
+                        self.log_message(f"Extracted credentials from Basic Auth header")
+                except Exception as e:
+                    self.log_message(f"Failed to parse Basic Auth: {e}")
+
             grant_type = params.get("grant_type", [None])[0]
             code = params.get("code", [None])[0]
             client_id = params.get("client_id", [None])[0]
             client_secret = params.get("client_secret", [None])[0]
             redirect_uri = params.get("redirect_uri", [None])[0]
+
+            # Log the token request details
+            self.log_message(f"Token request received:")
+            self.log_message(f"  - grant_type: {grant_type}")
+            self.log_message(f"  - code: {code[:8] if code else None}...")
+            self.log_message(f"  - client_id: {client_id}")
+            self.log_message(f"  - client_secret: {client_secret[:8] if client_secret else None}...")
+            self.log_message(f"  - redirect_uri: {redirect_uri}")
 
             # Validate grant type
             if grant_type != "authorization_code":
@@ -195,6 +219,9 @@ class OAuthRequestHandler(BaseHTTPRequestHandler):
 
             # Validate code
             if not code or code not in authorization_codes:
+                self.log_message(f"ERROR: Invalid or expired authorization code")
+                self.log_message(f"  Code provided: {code[:8] if code else 'None'}...")
+                self.log_message(f"  Valid codes: {len(authorization_codes)}")
                 self.send_error(400, "Invalid or expired authorization code")
                 return
 
@@ -206,9 +233,20 @@ class OAuthRequestHandler(BaseHTTPRequestHandler):
                 self.send_error(400, "Authorization code expired")
                 return
 
+            # Validate client_id
+            if not client_id:
+                self.log_message(f"ERROR: client_id not provided in token request")
+                self.log_message(f"  Expected: {code_data['client_id']}")
+                self.log_message(f"  Tip: Ensure gerrit.config has correct client-id")
+                self.send_error(401, "Missing client_id")
+                return
+
             # Validate client credentials
             if client_id != code_data["client_id"]:
-                self.send_error(401, "Invalid client_id")
+                self.log_message(f"ERROR: client_id mismatch in token request")
+                self.log_message(f"  Expected: {code_data['client_id']}")
+                self.log_message(f"  Received: {client_id}")
+                self.send_error(401, f"Invalid client_id. Expected: {code_data['client_id']}")
                 return
 
             # For testing, we accept any client_secret, but in production this should be validated
