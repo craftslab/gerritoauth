@@ -133,12 +133,8 @@ class OAuthRequestHandler(BaseHTTPRequestHandler):
                 self.send_error(401, f"Invalid client_id. Expected: {DEFAULT_CLIENT_ID}")
                 return
 
-            # Check if redirect_uri looks correct for Gerrit
-            if "/login/" not in redirect_uri:
-                self.log_message(f"WARNING: redirect_uri may be incorrect!")
-                self.log_message(f"  Expected pattern: http://YOUR_HOST:PORT/login/uac-oauth")
-                self.log_message(f"  Received: {redirect_uri}")
-                self.log_message(f"  This may cause 404 errors on callback!")
+            # Log redirect_uri for debugging
+            self.log_message(f"Redirect URI: {redirect_uri}")
 
             # For testing, we auto-approve and generate a code
             # In a real OAuth flow, this would show a consent screen
@@ -372,16 +368,13 @@ def main():
     print(f"  - Name: {DEFAULT_USER['name']}")
     print(f"\nNote: Ensure gerrit.config matches these client credentials")
     print(f"\n" + "="*70)
-    print(f"IMPORTANT: Gerrit OAuth Callback Configuration")
+    print(f"OAuth Callback Configuration")
     print(f"="*70)
-    print(f"For UAC OAuth provider, Gerrit will use this callback URL:")
-    print(f"  http://YOUR_GERRIT_HOST:PORT/login/uac-oauth")
-    print(f"\nExample: If Gerrit runs on http://127.0.0.1:8080, callback is:")
-    print(f"  http://127.0.0.1:8080/login/uac-oauth")
-    print(f"\nIf you see 404 errors, check that:")
-    print(f"  1. gerrit.config has: [plugin \"gerrit-oauth-provider-uac-oauth\"]")
-    print(f"  2. The provider name after 'gerrit-oauth-provider-' is 'uac-oauth'")
-    print(f"  3. Gerrit is properly configured and restarted")
+    print(f"The OAuth provider will accept any callback URL from Gerrit.")
+    print(f"Common patterns:")
+    print(f"  - Legacy: http://YOUR_GERRIT_HOST:PORT/oauth")
+    print(f"  - Modern: http://YOUR_GERRIT_HOST:PORT/login/uac-oauth")
+    print(f"\nMake sure Gerrit can reach this provider on the configured URLs.")
     print(f"="*70)
     print(f"\nPress Ctrl+C to stop the server\n")
 
