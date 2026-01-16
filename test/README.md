@@ -56,7 +56,7 @@ The provider uses the following default values (matching `gerrit.config`):
 ### Configuring Client Credentials
 
 The `client-id` and `client-secret` must match between:
-1. `gerrit.config` - `[plugin "oauth-uac-oauth"]` section
+1. `gerrit.config` - `[plugin "gerrit-oauth-provider-uac-oauth"]` section
 2. Fake OAuth provider - environment variables or defaults
 
 **Default values** (used if not specified):
@@ -74,7 +74,7 @@ The `client-id` and `client-secret` must match between:
 
 2. Update `gerrit.config` to match:
    ```ini
-   [plugin "oauth-uac-oauth"]
+   [plugin "gerrit-oauth-provider-uac-oauth"]
        client-id = "my-custom-client-id"
        client-secret = "my-custom-secret"
        ...
@@ -98,7 +98,9 @@ The provider returns the following test user information:
 To use this fake provider with Gerrit, update your `gerrit.config`:
 
 ```ini
-[plugin "oauth-uac-oauth"]
+[plugin "gerrit-oauth-provider"]
+    enabled = true
+[plugin "gerrit-oauth-provider-uac-oauth"]
     client-id = "your-client-id"
     client-secret = "your-client-secret"
     token-url = "http://localhost:8000/oauth/token"

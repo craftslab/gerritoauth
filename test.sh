@@ -9,7 +9,7 @@ set -e
 GERRIT_URL="${GERRIT_URL:-http://localhost:8080}"
 GERRIT_USER="${GERRIT_USER:-admin}"
 GERRIT_PASSWORD="${GERRIT_PASSWORD:-secret}"
-PLUGIN_NAME="oauth"
+PLUGIN_NAME="gerrit-oauth-provider"
 
 # Fake OAuth Provider configuration
 OAUTH_PROVIDER_HOST="${OAUTH_PROVIDER_HOST:-localhost}"

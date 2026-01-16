@@ -44,7 +44,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @Singleton
-class UacOAuthService implements OAuthServiceProvider {
+public class UacOAuthService implements OAuthServiceProvider {
   private static final Logger log = LoggerFactory.getLogger(UacOAuthService.class);
   static final String CONFIG_SUFFIX = "-uac-oauth";
   private static final String UAC_PROVIDER_PREFIX = "uac-oauth:";
@@ -65,27 +65,46 @@ class UacOAuthService implements OAuthServiceProvider {
 
     String tokenUrl = cfg.getString(InitOAuth.TOKEN_URL);
     String authorizeUrl = cfg.getString(InitOAuth.AUTHORIZE_URL);
-    resourceUrl = cfg.getString(InitOAuth.RESOURCE_URL);
+    String resourceUrlValue = cfg.getString(InitOAuth.RESOURCE_URL);
 
-    if (tokenUrl == null) {
-      throw new com.google.inject.ProvisionException("Token URL is required");
+    if (tokenUrl == null || tokenUrl.trim().isEmpty()) {
+      throw new com.google.inject.ProvisionException(
+          "Token URL is required for UAC OAuth provider. Please configure token-url in [plugin \"oauth-uac-oauth\"]");
     }
-    if (authorizeUrl == null) {
-      throw new com.google.inject.ProvisionException("Authorize URL is required");
+    if (authorizeUrl == null || authorizeUrl.trim().isEmpty()) {
+      throw new com.google.inject.ProvisionException(
+          "Authorize URL is required for UAC OAuth provider. Please configure authorize-url in [plugin \"oauth-uac-oauth\"]");
     }
-    if (resourceUrl == null) {
-      throw new com.google.inject.ProvisionException("Resource URL is required");
+    if (resourceUrlValue == null || resourceUrlValue.trim().isEmpty()) {
+      throw new com.google.inject.ProvisionException(
+          "Resource URL is required for UAC OAuth provider. Please configure resource-url in [plugin \"oauth-uac-oauth\"]");
     }
 
-    if (!URI.create(tokenUrl).isAbsolute()) {
-      throw new com.google.inject.ProvisionException("Token URL must be absolute URL");
+    // Trim URLs
+    tokenUrl = tokenUrl.trim();
+    authorizeUrl = authorizeUrl.trim();
+    resourceUrlValue = resourceUrlValue.trim();
+
+    try {
+      if (!URI.create(tokenUrl).isAbsolute()) {
+        throw new com.google.inject.ProvisionException(
+            "Token URL must be absolute URL: " + tokenUrl);
+      }
+      if (!URI.create(authorizeUrl).isAbsolute()) {
+        throw new com.google.inject.ProvisionException(
+            "Authorize URL must be absolute URL: " + authorizeUrl);
+      }
+      if (!URI.create(resourceUrlValue).isAbsolute()) {
+        throw new com.google.inject.ProvisionException(
+            "Resource URL must be absolute URL: " + resourceUrlValue);
+      }
+    } catch (IllegalArgumentException e) {
+      throw new com.google.inject.ProvisionException(
+          "Invalid URL format in UAC OAuth configuration: " + e.getMessage(), e);
     }
-    if (!URI.create(authorizeUrl).isAbsolute()) {
-      throw new com.google.inject.ProvisionException("Authorize URL must be absolute URL");
-    }
-    if (!URI.create(resourceUrl).isAbsolute()) {
-      throw new com.google.inject.ProvisionException("Resource URL must be absolute URL");
-    }
+
+    // Assign to final field
+    this.resourceUrl = resourceUrlValue;
 
     service =
         new ServiceBuilder(cfg.getString(InitOAuth.CLIENT_ID))
