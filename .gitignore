@@ -1,0 +1,11 @@
+/.apt_generated
+/.classpath
+/.project
+/.settings
+/bazel-bin
+/bazel-oauth
+/bazel-out
+/bazel-testlogs
+/eclipse-out
+/.idea
+*.swp
