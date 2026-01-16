@@ -104,6 +104,13 @@ class OAuthRequestHandler(BaseHTTPRequestHandler):
             client_id = params.get("client_id", [None])[0]
             redirect_uri = params.get("redirect_uri", [None])[0]
             response_type = params.get("response_type", [None])[0]
+            state = params.get("state", [None])[0]
+
+            # Log the authorization request details
+            self.log_message(f"Authorization request received:")
+            self.log_message(f"  - client_id: {client_id}")
+            self.log_message(f"  - redirect_uri: {redirect_uri}")
+            self.log_message(f"  - response_type: {response_type}")
 
             # Validate parameters
             if not client_id:
@@ -118,6 +125,21 @@ class OAuthRequestHandler(BaseHTTPRequestHandler):
                 self.send_error(400, f"Unsupported response_type: {response_type}")
                 return
 
+            # Validate client_id
+            if client_id != DEFAULT_CLIENT_ID:
+                self.log_message(f"ERROR: client_id mismatch!")
+                self.log_message(f"  Expected: {DEFAULT_CLIENT_ID}")
+                self.log_message(f"  Received: {client_id}")
+                self.send_error(401, f"Invalid client_id. Expected: {DEFAULT_CLIENT_ID}")
+                return
+
+            # Check if redirect_uri looks correct for Gerrit
+            if "/login/" not in redirect_uri:
+                self.log_message(f"WARNING: redirect_uri may be incorrect!")
+                self.log_message(f"  Expected pattern: http://YOUR_HOST:PORT/login/uac-oauth")
+                self.log_message(f"  Received: {redirect_uri}")
+                self.log_message(f"  This may cause 404 errors on callback!")
+
             # For testing, we auto-approve and generate a code
             # In a real OAuth flow, this would show a consent screen
             code = secrets.token_urlsafe(32)
@@ -131,10 +153,14 @@ class OAuthRequestHandler(BaseHTTPRequestHandler):
 
             # Redirect back with authorization code
             redirect_url = f"{redirect_uri}?code={code}"
+            if state:
+                redirect_url += f"&state={state}"
+
             self.send_response(302)
             self.send_header("Location", redirect_url)
             self.end_headers()
             self.log_message(f"Authorization granted: code={code[:8]}...")
+            self.log_message(f"Redirecting to: {redirect_url[:80]}...")
 
         except Exception as e:
             self.log_message(f"Error in handle_authorize: {e}")
@@ -307,7 +333,19 @@ def main():
     print(f"  - Login: {DEFAULT_USER['login']}")
     print(f"  - Name: {DEFAULT_USER['name']}")
     print(f"\nNote: Ensure gerrit.config matches these client credentials")
-    print(f"Press Ctrl+C to stop the server\n")
+    print(f"\n" + "="*70)
+    print(f"IMPORTANT: Gerrit OAuth Callback Configuration")
+    print(f"="*70)
+    print(f"For UAC OAuth provider, Gerrit will use this callback URL:")
+    print(f"  http://YOUR_GERRIT_HOST:PORT/login/uac-oauth")
+    print(f"\nExample: If Gerrit runs on http://127.0.0.1:8080, callback is:")
+    print(f"  http://127.0.0.1:8080/login/uac-oauth")
+    print(f"\nIf you see 404 errors, check that:")
+    print(f"  1. gerrit.config has: [plugin \"gerrit-oauth-provider-uac-oauth\"]")
+    print(f"  2. The provider name after 'gerrit-oauth-provider-' is 'uac-oauth'")
+    print(f"  3. Gerrit is properly configured and restarted")
+    print(f"="*70)
+    print(f"\nPress Ctrl+C to stop the server\n")
 
     try:
         httpd.serve_forever()

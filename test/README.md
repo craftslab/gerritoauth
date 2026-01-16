@@ -103,9 +103,9 @@ To use this fake provider with Gerrit, update your `gerrit.config`:
 [plugin "gerrit-oauth-provider-uac-oauth"]
     client-id = "your-client-id"
     client-secret = "your-client-secret"
-    token-url = "http://localhost:8000/oauth/token"
-    authorize-url = "http://localhost:8000/oauth/authorize"
-    resource-url = "http://localhost:8000/api/user"
+    authorize-url = "http://YOUR_OAUTH_SERVER_IP:8000/oauth/authorize"
+    token-url = "http://YOUR_OAUTH_SERVER_IP:8000/oauth/token"
+    resource-url = "http://YOUR_OAUTH_SERVER_IP:8000/api/user"
 ```
 
 ## OAuth Flow
