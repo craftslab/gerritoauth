@@ -1,0 +1,6 @@
+services:
+  casdoor:
+    image: casbin/casdoor-all-in-one:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
