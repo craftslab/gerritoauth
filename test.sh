@@ -18,7 +18,9 @@ OAUTH_PROVIDER_URL="http://${OAUTH_PROVIDER_HOST}:${OAUTH_PROVIDER_PORT}"
 OAUTH_CLIENT_ID="${OAUTH_CLIENT_ID:-your-client-id}"
 OAUTH_CLIENT_SECRET="${OAUTH_CLIENT_SECRET:-your-client-secret}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FAKE_PROVIDER_SCRIPT="${SCRIPT_DIR}/test/fake_oauth_provider.py"
+FAKE_PROVIDER_DIR="${SCRIPT_DIR}/test/fake_oauth"
+FAKE_PROVIDER_SCRIPT="${FAKE_PROVIDER_DIR}/fake_oauth_provider.py"
+FAKE_PROVIDER_WRAPPER="${FAKE_PROVIDER_DIR}/fake_oauth_provider.sh"
 FAKE_PROVIDER_PID=""
 
 # Options
@@ -30,6 +32,11 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
+
+# Curl defaults (avoid hanging indefinitely)
+CURL_CONNECT_TIMEOUT_SECONDS="${CURL_CONNECT_TIMEOUT_SECONDS:-3}"
+CURL_MAX_TIME_SECONDS="${CURL_MAX_TIME_SECONDS:-10}"
+CURL_OPTS=(--connect-timeout "$CURL_CONNECT_TIMEOUT_SECONDS" --max-time "$CURL_MAX_TIME_SECONDS")
 
 # Helper functions
 log_info() {
@@ -59,7 +66,17 @@ trap cleanup EXIT INT TERM
 
 # Check if fake OAuth provider is running
 check_fake_provider_running() {
-    curl -s -o /dev/null -w "%{http_code}" "$OAUTH_PROVIDER_URL/" 2>/dev/null | grep -q "200"
+    # Prefer checking a real OAuth endpoint; fall back to "/" if needed.
+    local authorize_url
+    authorize_url="${OAUTH_PROVIDER_URL}/oauth/authorize?response_type=code&client_id=${OAUTH_CLIENT_ID}&redirect_uri=http://localhost:8080/oauth"
+
+    local code
+    code="$(curl -s "${CURL_OPTS[@]}" -o /dev/null -w "%{http_code}" "$authorize_url" 2>/dev/null || true)"
+    if [ "$code" = "200" ] || [ "$code" = "302" ]; then
+        return 0
+    fi
+
+    curl -s "${CURL_OPTS[@]}" -o /dev/null -w "%{http_code}" "$OAUTH_PROVIDER_URL/" 2>/dev/null | grep -q "200"
 }
 
 # Start fake OAuth provider
@@ -69,19 +86,25 @@ start_fake_provider() {
         return 0
     fi
 
-    if [ ! -f "$FAKE_PROVIDER_SCRIPT" ]; then
-        log_error "Fake OAuth provider script not found at $FAKE_PROVIDER_SCRIPT"
-        return 1
-    fi
-
     if ! command -v python3 &> /dev/null; then
         log_error "python3 is not installed or not in PATH"
         return 1
     fi
 
     log_info "Starting fake OAuth provider at $OAUTH_PROVIDER_URL..."
-    OAUTH_CLIENT_ID="$OAUTH_CLIENT_ID" OAUTH_CLIENT_SECRET="$OAUTH_CLIENT_SECRET" \
-        python3 "$FAKE_PROVIDER_SCRIPT" --host "$OAUTH_PROVIDER_HOST" --port "$OAUTH_PROVIDER_PORT" > /tmp/fake_oauth_provider.log 2>&1 &
+    if [ -f "$FAKE_PROVIDER_WRAPPER" ]; then
+        OAUTH_CLIENT_ID="$OAUTH_CLIENT_ID" OAUTH_CLIENT_SECRET="$OAUTH_CLIENT_SECRET" \
+            OAUTH_PROVIDER_HOST="$OAUTH_PROVIDER_HOST" OAUTH_PROVIDER_PORT="$OAUTH_PROVIDER_PORT" \
+            bash "$FAKE_PROVIDER_WRAPPER" > /tmp/fake_oauth_provider.log 2>&1 &
+    elif [ -f "$FAKE_PROVIDER_SCRIPT" ]; then
+        OAUTH_CLIENT_ID="$OAUTH_CLIENT_ID" OAUTH_CLIENT_SECRET="$OAUTH_CLIENT_SECRET" \
+            python3 "$FAKE_PROVIDER_SCRIPT" --host "$OAUTH_PROVIDER_HOST" --port "$OAUTH_PROVIDER_PORT" > /tmp/fake_oauth_provider.log 2>&1 &
+    else
+        log_error "Fake OAuth provider not found. Expected one of:"
+        log_error "  - $FAKE_PROVIDER_WRAPPER"
+        log_error "  - $FAKE_PROVIDER_SCRIPT"
+        return 1
+    fi
     FAKE_PROVIDER_PID=$!
 
     # Wait for provider to start
@@ -115,24 +138,44 @@ stop_fake_provider() {
 test_fake_provider() {
     log_info "Testing fake OAuth provider endpoints..."
 
-    # Test root endpoint
-    RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" "$OAUTH_PROVIDER_URL/" || echo "000")
-    if [ "$RESPONSE" = "200" ]; then
-        log_info "✓ Fake OAuth provider root endpoint is accessible"
-    else
-        log_error "Fake OAuth provider root endpoint returned status: $RESPONSE"
+    local redirect_uri authorize_url location code token user_json
+    redirect_uri="http://localhost:8080/oauth"
+    authorize_url="${OAUTH_PROVIDER_URL}/oauth/authorize?response_type=code&client_id=${OAUTH_CLIENT_ID}&redirect_uri=${redirect_uri}"
+
+    # 1) Authorization: expect 302 with Location including code=
+    location="$(curl -s "${CURL_OPTS[@]}" -D - -o /dev/null "$authorize_url" | tr -d '\r' | awk -F': ' 'tolower($1)=="location"{print $2}' | tail -n 1)"
+    if [ -z "$location" ]; then
+        log_error "Authorization endpoint did not return a Location header"
         return 1
     fi
-
-    # Test authorization endpoint
-    RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
-        "$OAUTH_PROVIDER_URL/oauth/authorize?response_type=code&client_id=${OAUTH_CLIENT_ID}&redirect_uri=http://localhost:8080/oauth" \
-        || echo "000")
-    if [ "$RESPONSE" = "302" ] || [ "$RESPONSE" = "200" ]; then
-        log_info "✓ Fake OAuth provider authorization endpoint is working"
-    else
-        log_warn "Fake OAuth provider authorization endpoint returned status: $RESPONSE"
+    code="$(python3 -c "import sys,urllib.parse as u;p=u.urlparse(sys.argv[1]);q=u.parse_qs(p.query);print(q.get('code',[''])[0])" "$location")"
+    if [ -z "$code" ]; then
+        log_error "Authorization redirect missing code parameter. Location: $location"
+        return 1
     fi
+    log_info "✓ Authorization endpoint issued a code"
+
+    # 2) Token: exchange code for access_token
+    token="$(curl -s "${CURL_OPTS[@]}" -X POST "${OAUTH_PROVIDER_URL}/oauth/token" \
+        -d "grant_type=authorization_code" \
+        -d "code=${code}" \
+        -d "client_id=${OAUTH_CLIENT_ID}" \
+        -d "client_secret=${OAUTH_CLIENT_SECRET}" \
+        -d "redirect_uri=${redirect_uri}" \
+        | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('access_token',''))" 2>/dev/null || true)"
+    if [ -z "$token" ]; then
+        log_error "Token endpoint did not return an access_token"
+        return 1
+    fi
+    log_info "✓ Token endpoint exchanged code for access token"
+
+    # 3) User info: validate required fields
+    user_json="$(curl -s "${CURL_OPTS[@]}" -H "Authorization: Bearer ${token}" "${OAUTH_PROVIDER_URL}/api/user" || true)"
+    if ! python3 -c "import sys,json; d=json.load(sys.stdin); req=['id','email','login','name']; missing=[k for k in req if not d.get(k)]; sys.exit(1 if missing else 0)" <<<"$user_json" 2>/dev/null; then
+        log_error "User info endpoint did not return expected fields. Response: $user_json"
+        return 1
+    fi
+    log_info "✓ User info endpoint returned expected user JSON"
 
     return 0
 }
@@ -141,7 +184,7 @@ test_fake_provider() {
 test_gerrit_version() {
     log_info "Testing Gerrit version..."
 
-    RESPONSE=$(curl -s --user "$GERRIT_USER:$GERRIT_PASSWORD" \
+    RESPONSE=$(curl -s "${CURL_OPTS[@]}" --user "$GERRIT_USER:$GERRIT_PASSWORD" \
         "$GERRIT_URL/a/config/server/version" || echo "")
 
     if [ -z "$RESPONSE" ]; then
@@ -166,7 +209,7 @@ test_gerrit_version() {
 test_plugin_installed() {
     log_info "Checking if OAuth plugin is installed..."
 
-    RESPONSE=$(curl -s --user "$GERRIT_USER:$GERRIT_PASSWORD" \
+    RESPONSE=$(curl -s "${CURL_OPTS[@]}" --user "$GERRIT_USER:$GERRIT_PASSWORD" \
         "$GERRIT_URL/a/plugins/$PLUGIN_NAME/gerrit~status" || echo "")
 
     if [ -z "$RESPONSE" ]; then
@@ -185,7 +228,7 @@ test_plugin_installed() {
 test_list_plugins() {
     log_info "Listing all installed plugins..."
 
-    RESPONSE=$(curl -s --user "$GERRIT_USER:$GERRIT_PASSWORD" \
+    RESPONSE=$(curl -s "${CURL_OPTS[@]}" --user "$GERRIT_USER:$GERRIT_PASSWORD" \
         "$GERRIT_URL/a/plugins/?all" || echo "")
 
     if [ -z "$RESPONSE" ]; then
@@ -211,7 +254,7 @@ test_oauth_config() {
     log_info "Checking OAuth configuration..."
 
     # Try to access OAuth service URLs
-    RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+    RESPONSE=$(curl -s "${CURL_OPTS[@]}" -o /dev/null -w "%{http_code}" \
         "$GERRIT_URL/oauth" || echo "000")
 
     log_info "OAuth endpoint HTTP status: $RESPONSE"
@@ -229,7 +272,7 @@ test_oauth_config() {
 test_oauth_login() {
     log_info "Checking OAuth login endpoint..."
 
-    RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+    RESPONSE=$(curl -s "${CURL_OPTS[@]}" -o /dev/null -w "%{http_code}" \
         "$GERRIT_URL/login/oauth" || echo "000")
 
     log_info "OAuth login endpoint HTTP status: $RESPONSE"
@@ -248,7 +291,7 @@ test_plugin_api() {
     log_info "Testing plugin API endpoints..."
 
     # Test plugin metrics
-    RESPONSE=$(curl -s --user "$GERRIT_USER:$GERRIT_PASSWORD" \
+    RESPONSE=$(curl -s "${CURL_OPTS[@]}" --user "$GERRIT_USER:$GERRIT_PASSWORD" \
         "$GERRIT_URL/a/plugins/$PLUGIN_NAME/gerrit~metrics" || echo "")
 
     if [ -n "$RESPONSE" ]; then
@@ -372,67 +415,67 @@ main() {
 
     # Run tests
     if test_gerrit_version; then
-        ((TESTS_PASSED++))
+        ((++TESTS_PASSED))
     else
-        ((TESTS_FAILED++))
+        ((++TESTS_FAILED))
     fi
     echo ""
 
     if test_plugin_installed; then
-        ((TESTS_PASSED++))
+        ((++TESTS_PASSED))
     else
-        ((TESTS_FAILED++))
+        ((++TESTS_FAILED))
     fi
     echo ""
 
     if test_list_plugins; then
-        ((TESTS_PASSED++))
+        ((++TESTS_PASSED))
     else
-        ((TESTS_FAILED++))
+        ((++TESTS_FAILED))
     fi
     echo ""
 
     if test_oauth_config; then
-        ((TESTS_PASSED++))
+        ((++TESTS_PASSED))
     else
-        ((TESTS_FAILED++))
+        ((++TESTS_FAILED))
     fi
     echo ""
 
     if test_oauth_login; then
-        ((TESTS_PASSED++))
+        ((++TESTS_PASSED))
     else
-        ((TESTS_FAILED++))
+        ((++TESTS_FAILED))
     fi
     echo ""
 
     if test_plugin_api; then
-        ((TESTS_PASSED++))
+        ((++TESTS_PASSED))
     else
-        ((TESTS_FAILED++))
+        ((++TESTS_FAILED))
     fi
     echo ""
 
     if test_oauth_providers; then
-        ((TESTS_PASSED++))
+        ((++TESTS_PASSED))
     else
-        ((TESTS_FAILED++))
+        ((++TESTS_FAILED))
     fi
     echo ""
 
     # Test fake OAuth provider if it's running
     if check_fake_provider_running; then
         if test_fake_provider; then
-            ((TESTS_PASSED++))
+            ((++TESTS_PASSED))
         else
-            ((TESTS_FAILED++))
+            ((++TESTS_FAILED))
         fi
         echo ""
 
         if test_fake_provider_integration; then
-            ((TESTS_PASSED++))
+            ((++TESTS_PASSED))
         else
-            ((TESTS_FAILED++))
+            ((++TESTS_FAILED))
         fi
         echo ""
     fi
