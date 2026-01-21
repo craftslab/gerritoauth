@@ -17,13 +17,11 @@ The fake provider implements a minimal OAuth 2.0 authorization code flow that ma
 
 **Option 1: Using the Python script directly**
 ```bash
-cd test
 python3 fake_oauth_provider.py
 ```
 
 **Option 2: Using the wrapper script**
 ```bash
-cd test
 chmod +x fake_oauth_provider.sh
 ./fake_oauth_provider.sh
 ```
@@ -146,3 +144,33 @@ The provider implements the standard OAuth 2.0 authorization code flow:
    ```bash
    curl -H "Authorization: Bearer TOKEN" http://localhost:8000/api/user
    ```
+
+## Running the Test Suite
+
+A comprehensive test script (`test.sh`) is available in this directory to test the Gerrit OAuth plugin integration:
+
+```bash
+# Make the script executable (if needed)
+chmod +x test.sh
+
+# Run all tests
+./test.sh
+
+# Start the fake OAuth provider automatically before running tests
+./test.sh --start-provider
+
+# Run tests with custom provider host/port
+./test.sh --start-provider --provider-host 0.0.0.0 --provider-port 8000
+
+# View all available options
+./test.sh --help
+```
+
+The test script will:
+- Check Gerrit version and connectivity
+- Verify OAuth plugin installation
+- Test OAuth endpoints
+- Test fake OAuth provider endpoints
+- Validate integration between Gerrit and the fake provider
+
+**Note:** The test script expects to be run from the `test/fake_oauth` directory, and it will automatically locate the fake OAuth provider scripts in the same directory.
