@@ -48,7 +48,7 @@ public class UacOAuthService implements OAuthServiceProvider {
   private static final Logger log = LoggerFactory.getLogger(UacOAuthService.class);
   static final String CONFIG_SUFFIX = "-uac-oauth";
   private static final String UAC_PROVIDER_PREFIX = "uac-oauth:";
-  private static final String SCOPE = "openid";
+  private static final String DEFAULT_SCOPE = "";
   private static final int GERRIT_FULL_NAME_COUNT = 2;
   private static final String SPACE_CHAR = " ";
 
@@ -69,16 +69,19 @@ public class UacOAuthService implements OAuthServiceProvider {
 
     if (tokenUrl == null || tokenUrl.trim().isEmpty()) {
       throw new com.google.inject.ProvisionException(
-          "Token URL is required for UAC OAuth provider. Please configure token-url in [plugin \"oauth-uac-oauth\"]");
+          "Token URL is required for UAC OAuth provider. Please configure token-url in [plugin \"" + pluginName + CONFIG_SUFFIX + "\"]");
     }
     if (authorizeUrl == null || authorizeUrl.trim().isEmpty()) {
       throw new com.google.inject.ProvisionException(
-          "Authorize URL is required for UAC OAuth provider. Please configure authorize-url in [plugin \"oauth-uac-oauth\"]");
+          "Authorize URL is required for UAC OAuth provider. Please configure authorize-url in [plugin \"" + pluginName + CONFIG_SUFFIX + "\"]");
     }
     if (resourceUrlValue == null || resourceUrlValue.trim().isEmpty()) {
       throw new com.google.inject.ProvisionException(
-          "Resource URL is required for UAC OAuth provider. Please configure resource-url in [plugin \"oauth-uac-oauth\"]");
+          "Resource URL is required for UAC OAuth provider. Please configure resource-url in [plugin \"" + pluginName + CONFIG_SUFFIX + "\"]");
     }
+
+    log.info("Initializing UAC OAuth service with token-url: {}, authorize-url: {}, resource-url: {}",
+        tokenUrl, authorizeUrl, resourceUrlValue);
 
     // Trim URLs
     tokenUrl = tokenUrl.trim();
@@ -106,12 +109,23 @@ public class UacOAuthService implements OAuthServiceProvider {
     // Assign to final field
     this.resourceUrl = resourceUrlValue;
 
-    service =
+    // Get scope from config, use empty string if not provided (scope is optional for UAC)
+    String scope = cfg.getString("scope");
+    if (scope == null || scope.trim().isEmpty()) {
+      scope = DEFAULT_SCOPE;
+    }
+
+    ServiceBuilder serviceBuilder =
         new ServiceBuilder(cfg.getString(InitOAuth.CLIENT_ID))
             .apiSecret(cfg.getString(InitOAuth.CLIENT_SECRET))
-            .callback(canonicalWebUrl + "oauth")
-            .defaultScope(SCOPE)
-            .build(new UacApi(tokenUrl, authorizeUrl));
+            .callback(canonicalWebUrl + "oauth");
+
+    // Only add scope if it's not empty
+    if (!scope.isEmpty()) {
+      serviceBuilder.defaultScope(scope);
+    }
+
+    service = serviceBuilder.build(new UacApi(tokenUrl, authorizeUrl));
   }
 
   @Override
@@ -129,23 +143,55 @@ public class UacOAuthService implements OAuthServiceProvider {
                 response.getCode(), response.getBody(), request.getUrl()));
       }
       String responseBody = response.getBody();
-      log.info("====================>getUserInfo -> responseBody:{}", responseBody);
-      userJson = JSON.newGson().fromJson(responseBody, JsonElement.class);
-
       if (log.isDebugEnabled()) {
-        log.debug("User info response: {}", responseBody);
+        log.debug("UAC getUserInfo response (HTTP {})}: {}", response.getCode(), responseBody);
       }
+      userJson = JSON.newGson().fromJson(responseBody, JsonElement.class);
 
       if (userJson != null && userJson.isJsonObject()) {
         JsonObject jsonObject = userJson.getAsJsonObject();
+
+        // Try multiple possible field names for id
         String id = getJsonElementValue(jsonObject.get("id"));
+        if (id == null) {
+          id = getJsonElementValue(jsonObject.get("userId"));
+        }
+        if (id == null) {
+          id = getJsonElementValue(jsonObject.get("user_id"));
+        }
         if (id == null) {
           throw new IOException(String.format("Response doesn't contain id field: %s", responseBody));
         }
 
+        // Try multiple possible field names for email
         String email = getJsonElementValue(jsonObject.get("email"));
+        if (email == null) {
+          email = getJsonElementValue(jsonObject.get("mail"));
+        }
+
+        // Try multiple possible field names for login/username
         String login = getJsonElementValue(jsonObject.get("login"));
+        if (login == null) {
+          login = getJsonElementValue(jsonObject.get("username"));
+        }
+        if (login == null) {
+          login = getJsonElementValue(jsonObject.get("userName"));
+        }
+        if (login == null) {
+          login = getJsonElementValue(jsonObject.get("user_name"));
+        }
+
+        // Try multiple possible field names for name
         String name = getJsonElementValue(jsonObject.get("name"));
+        if (name == null) {
+          name = getJsonElementValue(jsonObject.get("displayName"));
+        }
+        if (name == null) {
+          name = getJsonElementValue(jsonObject.get("display_name"));
+        }
+        if (name == null) {
+          name = getJsonElementValue(jsonObject.get("fullName"));
+        }
 
         String gerritId = getGerritId(id, login);
         String gerritUsername = getGerritUsername(id, login);
