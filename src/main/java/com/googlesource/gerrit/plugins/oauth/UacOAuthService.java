@@ -144,54 +144,35 @@ public class UacOAuthService implements OAuthServiceProvider {
       }
       String responseBody = response.getBody();
       if (log.isDebugEnabled()) {
-        log.debug("UAC getUserInfo response (HTTP {})}: {}", response.getCode(), responseBody);
+        log.debug("UAC getUserInfo response (HTTP {}): {}", response.getCode(), responseBody);
       }
       userJson = JSON.newGson().fromJson(responseBody, JsonElement.class);
 
       if (userJson != null && userJson.isJsonObject()) {
-        JsonObject jsonObject = userJson.getAsJsonObject();
+        JsonObject root = userJson.getAsJsonObject();
+
+        // Some UAC responses wrap user info under nested objects (e.g., "data", "user").
+        JsonObject jsonObject = resolveUserObject(root);
 
         // Try multiple possible field names for id
-        String id = getJsonElementValue(jsonObject.get("id"));
-        if (id == null) {
-          id = getJsonElementValue(jsonObject.get("userId"));
+        String id = extractField(jsonObject, "id", "userId", "user_id", "userid");
+
+        // Try multiple possible field names for login/username
+        String login = extractField(jsonObject, "login", "username", "userName", "user_name", "account", "accountName");
+
+        // If id missing, fall back to login to avoid hard failure
+        if (id == null || id.isEmpty()) {
+          id = login;
         }
-        if (id == null) {
-          id = getJsonElementValue(jsonObject.get("user_id"));
-        }
-        if (id == null) {
-          throw new IOException(String.format("Response doesn't contain id field: %s", responseBody));
+        if (id == null || id.isEmpty()) {
+          throw new IOException(String.format("Response doesn't contain id or login field: %s", responseBody));
         }
 
         // Try multiple possible field names for email
-        String email = getJsonElementValue(jsonObject.get("email"));
-        if (email == null) {
-          email = getJsonElementValue(jsonObject.get("mail"));
-        }
-
-        // Try multiple possible field names for login/username
-        String login = getJsonElementValue(jsonObject.get("login"));
-        if (login == null) {
-          login = getJsonElementValue(jsonObject.get("username"));
-        }
-        if (login == null) {
-          login = getJsonElementValue(jsonObject.get("userName"));
-        }
-        if (login == null) {
-          login = getJsonElementValue(jsonObject.get("user_name"));
-        }
+        String email = extractField(jsonObject, "email", "mail");
 
         // Try multiple possible field names for name
-        String name = getJsonElementValue(jsonObject.get("name"));
-        if (name == null) {
-          name = getJsonElementValue(jsonObject.get("displayName"));
-        }
-        if (name == null) {
-          name = getJsonElementValue(jsonObject.get("display_name"));
-        }
-        if (name == null) {
-          name = getJsonElementValue(jsonObject.get("fullName"));
-        }
+        String name = extractField(jsonObject, "name", "displayName", "display_name", "fullName", "realName");
 
         String gerritId = getGerritId(id, login);
         String gerritUsername = getGerritUsername(id, login);
@@ -205,6 +186,47 @@ public class UacOAuthService implements OAuthServiceProvider {
     } catch (ExecutionException | InterruptedException e) {
       throw new RuntimeException("Cannot retrieve user info resource", e);
     }
+  }
+
+  private JsonObject resolveUserObject(JsonObject root) {
+    // If root already contains typical fields, return it directly
+    if (hasAnyField(root, "id", "userId", "user_id", "userid", "login", "username", "userName", "user_name")) {
+      return root;
+    }
+
+    // Common wrappers used by APIs
+    String[] wrappers = new String[] {"data", "datas", "result", "content", "user", "userinfo"};
+    for (String w : wrappers) {
+      JsonElement je = root.get(w);
+      if (je != null && !je.isJsonNull() && je.isJsonObject()) {
+        JsonObject candidate = je.getAsJsonObject();
+        if (hasAnyField(candidate, "id", "userId", "user_id", "userid", "login", "username", "userName", "user_name")) {
+          return candidate;
+        }
+      }
+    }
+    // Fallback to root
+    return root;
+  }
+
+  private boolean hasAnyField(JsonObject obj, String... keys) {
+    for (String k : keys) {
+      JsonElement je = obj.get(k);
+      if (je != null && !je.isJsonNull()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private String extractField(JsonObject obj, String... keys) {
+    for (String k : keys) {
+      String v = getJsonElementValue(obj.get(k));
+      if (v != null && !v.isEmpty()) {
+        return v;
+      }
+    }
+    return null;
   }
 
   private String getGerritUsername(String id, String login) {
