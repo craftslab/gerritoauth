@@ -143,9 +143,7 @@ public class UacOAuthService implements OAuthServiceProvider {
                 response.getCode(), response.getBody(), request.getUrl()));
       }
       String responseBody = response.getBody();
-      if (log.isDebugEnabled()) {
-        log.debug("UAC getUserInfo response (HTTP {}): {}", response.getCode(), responseBody);
-      }
+      log.info("UAC getUserInfo response (HTTP {}): {}", response.getCode(), responseBody);
       userJson = JSON.newGson().fromJson(responseBody, JsonElement.class);
 
       if (userJson != null && userJson.isJsonObject()) {
@@ -154,29 +152,35 @@ public class UacOAuthService implements OAuthServiceProvider {
         // Some UAC responses wrap user info under nested objects (e.g., "data", "user").
         JsonObject jsonObject = resolveUserObject(root);
 
-        // Try multiple possible field names for id
+        // Try multiple possible field names for login/username (LDAP username for linking)
+        String login = extractField(jsonObject, "login", "username", "userName", "user_name", "account", "accountName", "sAMAccountName", "uid");
+
+        // Try multiple possible field names for id (unique identifier)
         String id = extractField(jsonObject, "id", "userId", "user_id", "userid");
 
-        // Try multiple possible field names for login/username
-        String login = extractField(jsonObject, "login", "username", "userName", "user_name", "account", "accountName");
-
-        // If id missing, fall back to login to avoid hard failure
-        if (id == null || id.isEmpty()) {
-          id = login;
+        // Use login as primary identifier if available, otherwise fall back to id
+        // This ensures LDAP username matching for account linking
+        String ldapUsername = login;
+        if (ldapUsername == null || ldapUsername.isEmpty()) {
+          ldapUsername = id;
         }
-        if (id == null || id.isEmpty()) {
+        if (ldapUsername == null || ldapUsername.isEmpty()) {
           throw new IOException(String.format("Response doesn't contain id or login field: %s", responseBody));
         }
 
         // Try multiple possible field names for email
-        String email = extractField(jsonObject, "email", "mail");
+        String email = extractField(jsonObject, "email", "mail", "emailAddress", "email_address", "userEmail", "user_email");
 
         // Try multiple possible field names for name
         String name = extractField(jsonObject, "name", "displayName", "display_name", "fullName", "realName");
 
-        String gerritId = getGerritId(id, login);
-        String gerritUsername = getGerritUsername(id, login);
+        // Use LDAP username for both external ID and username to enable account linking
+        String gerritId = UAC_PROVIDER_PREFIX + ldapUsername;
+        String gerritUsername = ldapUsername;
         String gerritFullname = getGerritFullname(name, gerritUsername);
+
+        log.info("UAC user mapping - UAC login: {}, UAC id: {}, ldapUsername: {}, email: {}, name: {}, gerritId: {}, gerritUsername: {}, gerritFullname: {}",
+            login, id, ldapUsername, email, name, gerritId, gerritUsername, gerritFullname);
 
         return new OAuthUserInfo(gerritId, gerritUsername, email, gerritFullname, null);
       } else {
