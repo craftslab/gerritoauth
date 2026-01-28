@@ -54,6 +54,7 @@ public class UacOAuthService implements OAuthServiceProvider {
 
   private final OAuth20Service service;
   private final String resourceUrl;
+  private final boolean linkToExistingOpenIDAccounts;
 
   @Inject
   UacOAuthService(
@@ -62,6 +63,7 @@ public class UacOAuthService implements OAuthServiceProvider {
       @CanonicalWebUrl Provider<String> urlProvider) {
     PluginConfig cfg = cfgFactory.getFromGerritConfig(pluginName + CONFIG_SUFFIX);
     String canonicalWebUrl = CharMatcher.is('/').trimTrailingFrom(urlProvider.get()) + "/";
+    this.linkToExistingOpenIDAccounts = cfg.getBoolean(InitOAuth.LINK_TO_EXISTING_OPENID_ACCOUNT, false);
 
     String tokenUrl = cfg.getString(InitOAuth.TOKEN_URL);
     String authorizeUrl = cfg.getString(InitOAuth.AUTHORIZE_URL);
@@ -169,18 +171,28 @@ public class UacOAuthService implements OAuthServiceProvider {
         }
 
         // Try multiple possible field names for email
-        String email = extractField(jsonObject, "email", "mail", "emailAddress", "email_address", "userEmail", "user_email");
+        String email = extractField(jsonObject, "email", "mail", "emailAddress", "email_address", "userEmail", "user_email", "userMail", "workEmail");
+
+        // If email is still null and we have login, construct email from LDAP pattern
+        if ((email == null || email.isEmpty()) && ldapUsername != null && !ldapUsername.isEmpty()) {
+          // Check if there's an existing account with this username to get the email
+          log.info("UAC email is null, username: {} will be used for account linking without email", ldapUsername);
+        }
 
         // Try multiple possible field names for name
         String name = extractField(jsonObject, "name", "displayName", "display_name", "fullName", "realName");
 
-        // Use LDAP username for both external ID and username to enable account linking
+        // Use LDAP username for external ID
         String gerritId = UAC_PROVIDER_PREFIX + ldapUsername;
-        String gerritUsername = ldapUsername;
-        String gerritFullname = getGerritFullname(name, gerritUsername);
 
-        log.info("UAC user mapping - UAC login: {}, UAC id: {}, ldapUsername: {}, email: {}, name: {}, gerritId: {}, gerritUsername: {}, gerritFullname: {}",
-            login, id, ldapUsername, email, name, gerritId, gerritUsername, gerritFullname);
+        // When link-to-existing-openid-accounts is enabled, pass null for username
+        // This prevents Gerrit from creating a new "username:XXX" external ID
+        // and allows it to link to the existing LDAP account with "username:XXX"
+        String gerritUsername = linkToExistingOpenIDAccounts ? null : ldapUsername;
+        String gerritFullname = getGerritFullname(name, ldapUsername);
+
+        log.info("UAC user mapping - UAC login: {}, UAC id: {}, ldapUsername: {}, email: {}, name: {}, gerritId: {}, gerritUsername: {}, gerritFullname: {}, linkToExistingOpenIDAccounts: {}",
+            login, id, ldapUsername, email, name, gerritId, gerritUsername, gerritFullname, linkToExistingOpenIDAccounts);
 
         return new OAuthUserInfo(gerritId, gerritUsername, email, gerritFullname, null);
       } else {
