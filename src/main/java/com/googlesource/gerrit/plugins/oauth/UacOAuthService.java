@@ -65,6 +65,8 @@ public class UacOAuthService implements OAuthServiceProvider {
     String canonicalWebUrl = CharMatcher.is('/').trimTrailingFrom(urlProvider.get()) + "/";
     this.linkToExistingOpenIDAccounts = cfg.getBoolean(InitOAuth.LINK_TO_EXISTING_OPENID_ACCOUNT, false);
 
+    log.info("UAC OAuth Service initialized: link-to-existing-openid-accounts = {}", linkToExistingOpenIDAccounts);
+
     String tokenUrl = cfg.getString(InitOAuth.TOKEN_URL);
     String authorizeUrl = cfg.getString(InitOAuth.AUTHORIZE_URL);
     String resourceUrlValue = cfg.getString(InitOAuth.RESOURCE_URL);
@@ -185,11 +187,20 @@ public class UacOAuthService implements OAuthServiceProvider {
         // Use LDAP username for external ID
         String gerritId = UAC_PROVIDER_PREFIX + ldapUsername;
 
-        // When link-to-existing-openid-accounts is enabled, use claimedIdentity to link
-        // to existing LDAP account by username. Gerrit will look up the account with
-        // external ID "username:XXX" and link the new OAuth ID to that existing account.
-        String gerritUsername = ldapUsername;
-        String claimedIdentity = linkToExistingOpenIDAccounts ? ("username:" + ldapUsername) : null;
+        // When link-to-existing-openid-accounts is enabled:
+        // 1. Set username to NULL to prevent creating duplicate "username:XXX" external ID
+        // 2. Set claimedIdentity to "username:XXX" to tell Gerrit which account to link to
+        // Gerrit's OAuthSession will look up the account by claimedIdentity and link the
+        // new OAuth external ID to that existing account. This matches oauth-2.13.9 behavior.
+        String gerritUsername;
+        String claimedIdentity;
+        if (linkToExistingOpenIDAccounts) {
+          gerritUsername = null;  // Don't create new username external ID
+          claimedIdentity = "username:" + ldapUsername;  // Link to existing account
+        } else {
+          gerritUsername = ldapUsername;  // Create new account with username
+          claimedIdentity = null;
+        }
         String gerritFullname = getGerritFullname(name, ldapUsername);
 
         log.info("UAC user mapping - UAC login: {}, UAC id: {}, ldapUsername: {}, email: {}, name: {}, gerritId: {}, gerritUsername: {}, gerritFullname: {}, claimedIdentity: {}, linkToExistingOpenIDAccounts: {}",
