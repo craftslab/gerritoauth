@@ -191,7 +191,7 @@ public class UacOAuthService implements OAuthServiceProvider {
         // 1. Set username to NULL to prevent creating duplicate "username:XXX" external ID
         // 2. Set claimedIdentity to "username:XXX" to tell Gerrit which account to link to
         // Gerrit's OAuthSession will look up the account by claimedIdentity and link the
-        // new OAuth external ID to that existing account. This matches oauth-2.13.9 behavior.
+        // new OAuth external ID to that existing account.
         String gerritUsername;
         String claimedIdentity;
         if (linkToExistingOpenIDAccounts) {
