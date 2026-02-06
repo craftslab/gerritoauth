@@ -29,12 +29,16 @@ class InitOAuth implements InitStep {
   static final String USE_EMAIL_AS_USERNAME =
       "use-email-as-username";
   static final String ROOT_URL = "root-url";
+  static final String TOKEN_URL = "token-url";
+  static final String AUTHORIZE_URL = "authorize-url";
+  static final String RESOURCE_URL = "resource-url";
 
   private final ConsoleUI ui;
   private final Section googleOAuthProviderSection;
   private final Section githubOAuthProviderSection;
   private final Section bitbucketOAuthProviderSection;
   private final Section casOAuthProviderSection;
+  private final Section uacOAuthProviderSection;
 
   @Inject
   InitOAuth(ConsoleUI ui,
@@ -49,6 +53,8 @@ class InitOAuth implements InitStep {
         PLUGIN_SECTION, pluginName + BitbucketOAuthService.CONFIG_SUFFIX);
     this.casOAuthProviderSection = sections.get(
         PLUGIN_SECTION, pluginName + CasOAuthService.CONFIG_SUFFIX);
+    this.uacOAuthProviderSection = sections.get(
+      PLUGIN_SECTION, pluginName + UacOAuthService.CONFIG_SUFFIX);
   }
 
   @Override
@@ -81,6 +87,14 @@ class InitOAuth implements InitStep {
     if (configureCasOAuthProvider) {
       casOAuthProviderSection.string("CAS Root URL", ROOT_URL, null);
       configureOAuth(casOAuthProviderSection);
+    }
+
+    boolean configureUacOAuthProvider = ui.yesno(
+        true, "Use UAC OAuth provider for Gerrit login ?");
+    if (configureUacOAuthProvider && configureOAuth(uacOAuthProviderSection)) {
+      uacOAuthProviderSection.string("UAC Token URL", TOKEN_URL, null);
+      uacOAuthProviderSection.string("UAC Authorize URL", AUTHORIZE_URL, null);
+      uacOAuthProviderSection.string("UAC Resource URL", RESOURCE_URL, null);
     }
   }
 

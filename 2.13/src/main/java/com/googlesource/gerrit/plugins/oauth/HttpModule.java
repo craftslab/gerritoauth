@@ -67,5 +67,27 @@ class HttpModule extends HttpPluginModule {
           .annotatedWith(Exports.named(CasOAuthService.CONFIG_SUFFIX))
           .to(CasOAuthService.class);
     }
+
+    cfg = cfgFactory.getFromGerritConfig(
+        pluginName + UacOAuthService.CONFIG_SUFFIX);
+    String clientId = cfg.getString(InitOAuth.CLIENT_ID);
+    String clientSecret = cfg.getString(InitOAuth.CLIENT_SECRET);
+    String tokenUrl = cfg.getString(InitOAuth.TOKEN_URL);
+    String authorizeUrl = cfg.getString(InitOAuth.AUTHORIZE_URL);
+    String resourceUrl = cfg.getString(InitOAuth.RESOURCE_URL);
+    if (clientId != null
+        && !clientId.trim().isEmpty()
+        && clientSecret != null
+        && !clientSecret.trim().isEmpty()
+        && tokenUrl != null
+        && !tokenUrl.trim().isEmpty()
+        && authorizeUrl != null
+        && !authorizeUrl.trim().isEmpty()
+        && resourceUrl != null
+        && !resourceUrl.trim().isEmpty()) {
+      bind(OAuthServiceProvider.class)
+          .annotatedWith(Exports.named(UacOAuthService.CONFIG_SUFFIX))
+          .to(UacOAuthService.class);
+    }
   }
 }
