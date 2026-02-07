@@ -44,6 +44,16 @@ COPY .bazelrc /workspace/oauth/
 COPY .buckversion /workspace/oauth/
 COPY .watchmanconfig /workspace/oauth/
 
+# Initialize plugin as separate git repo to use VERSION file for version tagging
+RUN cd /workspace/oauth \
+    && git init \
+    && git config user.email "builder@localhost" \
+    && git config user.name "Builder" \
+    && git add . \
+    && git commit -m "oauth plugin" \
+    && PLUGIN_VERSION=$(grep -oP "PLUGIN_VERSION = '\K[^']+" VERSION) \
+    && git tag -a "v${PLUGIN_VERSION}" -m "oauth plugin v${PLUGIN_VERSION}"
+
 # Build plugin
 WORKDIR /workspace/oauth
 RUN buck kill || true && buck build plugin
