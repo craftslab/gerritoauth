@@ -1,3 +1,5 @@
+allow_unsafe_import('multiprocessing')
+allow_unsafe_import('os')
 include_defs('//bucklets/gerrit_plugin.bucklet')
 include_defs('//bucklets/maven_jar.bucklet')
 define_license('scribe')

@@ -91,7 +91,8 @@ class InitOAuth implements InitStep {
 
     boolean configureUacOAuthProvider = ui.yesno(
         true, "Use UAC OAuth provider for Gerrit login ?");
-    if (configureUacOAuthProvider && configureOAuth(uacOAuthProviderSection)) {
+    if (configureUacOAuthProvider) {
+      configureOAuth(uacOAuthProviderSection);
       uacOAuthProviderSection.string("UAC Token URL", TOKEN_URL, null);
       uacOAuthProviderSection.string("UAC Authorize URL", AUTHORIZE_URL, null);
       uacOAuthProviderSection.string("UAC Resource URL", RESOURCE_URL, null);

@@ -25,6 +25,7 @@ python_library(
     'util.py',
     '__init__.py'
   ],
+  base_module = '',
   visibility = ['PUBLIC'],
 )
 
@@ -39,7 +40,6 @@ genrule(
   name = 'buck.properties',
   cmd = 'echo buck=`which buck`>$OUT;' +
     ("echo PATH=\''%s'\' >>$OUT;" % shquote(os_path())),
-  deps = [],
   out = 'buck.properties',
   visibility = ['PUBLIC'],
 )

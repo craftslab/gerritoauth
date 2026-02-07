@@ -22,10 +22,10 @@ except ImportError:
     return Popen(*cmd, stdout=PIPE).communicate()[0]
 
 REPO_ROOTS = {
-  'GERRIT': 'http://gerrit-maven.storage.googleapis.com',
+  'GERRIT': 'https://gerrit-maven.storage.googleapis.com',
   'GERRIT_API': 'https://gerrit-api.commondatastorage.googleapis.com/release',
   'ECLIPSE': 'https://repo.eclipse.org/content/groups/releases',
-  'MAVEN_CENTRAL': 'http://repo1.maven.org/maven2',
+  'MAVEN_CENTRAL': 'https://repo1.maven.org/maven2',
   'MAVEN_LOCAL': 'file://' + path.expanduser('~/.m2/repository'),
 }
 

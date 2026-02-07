@@ -33,19 +33,16 @@ RUN set -eux; \
     buck --version
 
 # Copy plugin source code and all necessary files
-COPY bucklets /workspace/bucklets
 COPY lib/ /workspace/oauth/lib/
 COPY src/ /workspace/oauth/src/
 COPY tools/ /workspace/oauth/tools/
+COPY bucklets /workspace/oauth/bucklets
 COPY BUCK /workspace/oauth/
 COPY VERSION /workspace/oauth/
-
-# Link bucklets into plugin dir and setup
-RUN set -eux; \
-    cd /workspace/oauth; \
-    ln -s ../bucklets ./bucklets || true; \
-    ln -s bucklets/buckversion .buckversion || true; \
-    ln -s bucklets/watchmanconfig .watchmanconfig || true;
+COPY .buckconfig /workspace/oauth/
+COPY .bazelrc /workspace/oauth/
+COPY .buckversion /workspace/oauth/
+COPY .watchmanconfig /workspace/oauth/
 
 # Build plugin
 WORKDIR /workspace/oauth
