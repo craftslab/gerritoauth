@@ -86,7 +86,7 @@ RUN bazel build plugins/oauth
 # Export built plugin (switch back to root for file operations)
 USER root
 RUN mkdir -p /workspace/output \
-    && cp /workspace/gerrit/bazel-bin/plugins/oauth/oauth.jar /workspace/output/ \
+    && cp /workspace/gerrit/bazel-bin/plugins/oauth/oauth.jar /workspace/output/gerrit-oauth-provider.jar \
     && chown -R builder:builder /workspace/output
 
 # Set working directory
