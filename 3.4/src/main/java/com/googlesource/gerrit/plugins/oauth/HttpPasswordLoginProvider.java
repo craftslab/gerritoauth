@@ -15,10 +15,12 @@
 package com.googlesource.gerrit.plugins.oauth;
 
 import com.google.common.base.Strings;
+import com.google.gerrit.entities.Account;
 import com.google.gerrit.extensions.auth.oauth.OAuthLoginProvider;
 import com.google.gerrit.extensions.auth.oauth.OAuthUserInfo;
 import com.google.gerrit.server.account.AccountCache;
 import com.google.gerrit.server.account.AccountState;
+import com.google.gerrit.server.account.externalids.PasswordVerifier;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import java.io.IOException;
@@ -38,21 +40,22 @@ class HttpPasswordLoginProvider implements OAuthLoginProvider {
       throw new IOException("Missing credentials");
     }
 
-    AccountState state = accountCache.getByUsername(username);
-    if (state == null || !state.getAccount().isActive()) {
+    AccountState state = accountCache.getByUsername(username).orElse(null);
+    if (state == null || state.account().inactive()) {
       throw new IOException("Invalid credentials");
     }
 
-    String expected = state.getPassword(username);
-    if (Strings.isNullOrEmpty(expected) || !expected.equals(secret)) {
+    if (!PasswordVerifier.checkPassword(state.externalIds(), username, secret)) {
       throw new IOException("Invalid credentials");
     }
+
+    Account account = state.account();
 
     return new OAuthUserInfo(
         "username:" + username,
         username,
-        state.getAccount().getPreferredEmail(),
-        state.getAccount().getFullName(),
+        account.preferredEmail(),
+        account.fullName(),
         null);
   }
 }
