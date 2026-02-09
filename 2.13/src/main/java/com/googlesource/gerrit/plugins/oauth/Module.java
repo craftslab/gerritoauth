@@ -32,6 +32,6 @@ public class Module extends AbstractModule {
   protected void configure() {
     bind(OAuthLoginProvider.class)
         .annotatedWith(Exports.named(pluginName))
-        .to(DisabledOAuthLoginProvider.class);
+        .to(HttpPasswordLoginProvider.class);
   }
 }
