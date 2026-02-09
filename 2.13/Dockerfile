@@ -56,12 +56,12 @@ RUN cd /workspace/oauth \
 
 # Build plugin
 WORKDIR /workspace/oauth
-RUN buck kill || true && buck build plugin
+RUN buck kill || true && buck build //:gerrit-oauth-provider
 
 # Export built plugin (switch back to root for file operations)
 USER root
 RUN mkdir -p /workspace/output \
-    && cp /workspace/oauth/buck-out/gen/oauth.jar /workspace/output/
+    && cp /workspace/oauth/buck-out/gen/gerrit-oauth-provider.jar /workspace/output/
 
 # Set working directory
 WORKDIR /workspace/oauth
