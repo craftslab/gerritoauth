@@ -19,17 +19,23 @@ import org.scribe.model.OAuthConfig;
 import org.scribe.utils.OAuthEncoder;
 
 public class GitHub2Api extends DefaultApi20 {
-  private static final String AUTHORIZE_URL =
-      "https://github.com/login/oauth/authorize?client_id=%s&redirect_uri=%s";
+  private static final String AUTHORIZE_URL = "%slogin/oauth/authorize";
+
+  private final String rootUrl;
+
+  public GitHub2Api(String rootUrl) {
+    this.rootUrl = rootUrl;
+  }
 
   @Override
   public String getAccessTokenEndpoint() {
-    return "https://github.com/login/oauth/access_token";
+    return String.format("%slogin/oauth/access_token", rootUrl);
   }
 
   @Override
   public String getAuthorizationUrl(OAuthConfig config) {
-    return String.format(AUTHORIZE_URL, config.getApiKey(),
-        OAuthEncoder.encode(config.getCallback()));
+    return String.format(AUTHORIZE_URL, rootUrl)
+      + "?client_id=" + config.getApiKey()
+      + "&redirect_uri=" + OAuthEncoder.encode(config.getCallback());
   }
 }

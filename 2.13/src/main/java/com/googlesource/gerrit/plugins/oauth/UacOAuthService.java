@@ -51,10 +51,14 @@ class UacOAuthService implements OAuthServiceProvider {
   private static final String UAC_PROVIDER_PREFIX = "uac-oauth:";
   private static final String DEFAULT_SCOPE = "";
   private static final String SPACE_CHAR = " ";
+  private static final String AUTH_METHOD = "auth-method";
+  private static final String AUTH_METHOD_QUERY = "query";
+  private static final String AUTH_METHOD_HEADER = "header";
 
   private final OAuthService service;
   private final String resourceUrl;
   private final boolean linkToExistingOpenIDAccounts;
+  private final String authMethod;
 
   @Inject
   UacOAuthService(PluginConfigFactory cfgFactory,
@@ -92,13 +96,18 @@ class UacOAuthService implements OAuthServiceProvider {
     }
 
     service = serviceBuilder.build();
+    authMethod = parseAuthMethod(cfg.getString(AUTH_METHOD));
   }
 
   @Override
   public OAuthUserInfo getUserInfo(OAuthToken token) throws IOException {
     OAuthRequest request = new OAuthRequest(Verb.GET, resourceUrl);
     Token t = new Token(token.getToken(), token.getSecret(), token.getRaw());
-    service.signRequest(t, request);
+    if (AUTH_METHOD_HEADER.equals(authMethod)) {
+      request.addHeader("Authorization", "Bearer " + t.getToken());
+    } else {
+      service.signRequest(t, request);
+    }
     Response response = request.send();
     if (response.getCode() != SC_OK) {
       throw new IOException(String.format("Status %s (%s) for request %s",
@@ -176,6 +185,19 @@ class UacOAuthService implements OAuthServiceProvider {
           "Invalid URL format in UAC OAuth configuration: " + e.getMessage(), e);
     }
     return trimmed;
+  }
+
+  private String parseAuthMethod(String value) {
+    if (value == null || value.trim().isEmpty()) {
+      return AUTH_METHOD_QUERY;
+    }
+    String normalized = value.trim().toLowerCase();
+    if (AUTH_METHOD_HEADER.equals(normalized)
+        || AUTH_METHOD_QUERY.equals(normalized)) {
+      return normalized;
+    }
+    log.warn("Unknown UAC auth-method '{}', falling back to 'query'", value);
+    return AUTH_METHOD_QUERY;
   }
 
   private JsonObject resolveUserObject(JsonObject root) {
