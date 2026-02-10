@@ -15,9 +15,6 @@
 package com.googlesource.gerrit.plugins.oauth;
 
 import static com.google.gerrit.server.OutputFormat.JSON;
-import static javax.servlet.http.HttpServletResponse.SC_OK;
-import static javax.servlet.http.HttpServletResponse.SC_UNAUTHORIZED;
-import static javax.servlet.http.HttpServletResponse.SC_FORBIDDEN;
 
 import com.google.common.base.CharMatcher;
 import com.google.gerrit.extensions.annotations.PluginName;
@@ -36,6 +33,7 @@ import com.google.inject.ProvisionException;
 import com.google.inject.Singleton;
 import java.io.IOException;
 import java.net.URI;
+import javax.servlet.http.HttpServletResponse;
 import org.scribe.builder.ServiceBuilder;
 import org.scribe.model.OAuthRequest;
 import org.scribe.model.Response;
@@ -53,15 +51,10 @@ class UacOAuthService implements OAuthServiceProvider {
   private static final String UAC_PROVIDER_PREFIX = "uac-oauth:";
   private static final String DEFAULT_SCOPE = "";
   private static final String SPACE_CHAR = " ";
-  private static final String AUTH_METHOD = "auth-method";
-  private static final String AUTH_METHOD_QUERY = "query";
-  private static final String AUTH_METHOD_HEADER = "header";
-  private static final String AUTH_METHOD_AUTO = "auto";
 
   private final OAuthService service;
   private final String resourceUrl;
   private final boolean linkToExistingOpenIDAccounts;
-  private final String authMethod;
 
   @Inject
   UacOAuthService(PluginConfigFactory cfgFactory,
@@ -72,37 +65,64 @@ class UacOAuthService implements OAuthServiceProvider {
     String canonicalWebUrl = CharMatcher.is('/').trimTrailingFrom(
         urlProvider.get()) + "/";
 
-    // Allow domain override for callback URL construction
-    String domain = cfg.getString(InitOAuth.DOMAIN);
-    if (domain != null && !domain.trim().isEmpty()) {
-      domain = domain.trim();
-      if (!domain.startsWith("http://") && !domain.startsWith("https://")) {
-        // Use same protocol as canonicalWebUrl
-        String protocol = canonicalWebUrl.startsWith("https://") ? "https://" : "http://";
-        domain = protocol + domain;
-      }
-      canonicalWebUrl = CharMatcher.is('/').trimTrailingFrom(domain) + "/";
-      if (log.isInfoEnabled()) {
-        log.info("UAC OAuth: using domain override for callback: {}", canonicalWebUrl);
-      }
-    }
-
     this.linkToExistingOpenIDAccounts = cfg.getBoolean(
         InitOAuth.LINK_TO_EXISTING_OPENID_ACCOUNT, false);
 
-    String tokenUrl = requireUrl(cfg.getString(InitOAuth.TOKEN_URL),
-        "Token URL", pluginName);
-    String authorizeUrl = requireUrl(cfg.getString(InitOAuth.AUTHORIZE_URL),
-        "Authorize URL", pluginName);
-    String resourceUrlValue = requireUrl(cfg.getString(InitOAuth.RESOURCE_URL),
-        "Resource URL", pluginName);
+    log.info(
+        "UAC OAuth Service initialized: link-to-existing-openid-accounts = {}",
+        linkToExistingOpenIDAccounts);
 
-    this.resourceUrl = resourceUrlValue;
+    String tokenUrl = cfg.getString(InitOAuth.TOKEN_URL);
+    String authorizeUrl = cfg.getString(InitOAuth.AUTHORIZE_URL);
+    String resourceUrlValue = cfg.getString(InitOAuth.RESOURCE_URL);
 
-    if (log.isInfoEnabled()) {
-      log.info("UAC OAuth initialized - token-url: {}, authorize-url: {}, resource-url: {}, callback: {}oauth",
-          tokenUrl, authorizeUrl, resourceUrlValue, canonicalWebUrl);
+    if (tokenUrl == null || tokenUrl.trim().isEmpty()) {
+      throw new ProvisionException(
+          "Token URL is required for UAC OAuth provider. Please configure token-url in [plugin \""
+              + pluginName
+              + CONFIG_SUFFIX
+              + "\"]");
     }
+    if (authorizeUrl == null || authorizeUrl.trim().isEmpty()) {
+      throw new ProvisionException(
+          "Authorize URL is required for UAC OAuth provider. Please configure authorize-url in [plugin \""
+              + pluginName
+              + CONFIG_SUFFIX
+              + "\"]");
+    }
+    if (resourceUrlValue == null || resourceUrlValue.trim().isEmpty()) {
+      throw new ProvisionException(
+          "Resource URL is required for UAC OAuth provider. Please configure resource-url in [plugin \""
+              + pluginName
+              + CONFIG_SUFFIX
+              + "\"]");
+    }
+
+    log.info(
+        "Initializing UAC OAuth service with token-url: {}, authorize-url: {}, resource-url: {}",
+        tokenUrl,
+        authorizeUrl,
+        resourceUrlValue);
+
+    tokenUrl = tokenUrl.trim();
+    authorizeUrl = authorizeUrl.trim();
+    resourceUrlValue = resourceUrlValue.trim();
+
+    try {
+      if (!URI.create(tokenUrl).isAbsolute()) {
+        throw new ProvisionException("Token URL must be absolute URL: " + tokenUrl);
+      }
+      if (!URI.create(authorizeUrl).isAbsolute()) {
+        throw new ProvisionException("Authorize URL must be absolute URL: " + authorizeUrl);
+      }
+      if (!URI.create(resourceUrlValue).isAbsolute()) {
+        throw new ProvisionException("Resource URL must be absolute URL: " + resourceUrlValue);
+      }
+    } catch (IllegalArgumentException e) {
+      throw new ProvisionException(
+          "Invalid URL format in UAC OAuth configuration: " + e.getMessage(), e);
+    }
+    this.resourceUrl = resourceUrlValue;
 
     String scope = cfg.getString("scope");
     if (scope == null || scope.trim().isEmpty()) {
@@ -120,31 +140,21 @@ class UacOAuthService implements OAuthServiceProvider {
     }
 
     service = serviceBuilder.build();
-    authMethod = parseAuthMethod(cfg.getString(AUTH_METHOD));
   }
 
   @Override
   public OAuthUserInfo getUserInfo(OAuthToken token) throws IOException {
     Token t = new Token(token.getToken(), token.getSecret(), token.getRaw());
-    Response response = executeUserInfoRequest(t, authMethod);
-    if (AUTH_METHOD_AUTO.equals(authMethod)
-        && response.getCode() != SC_OK
-        && (response.getCode() == SC_UNAUTHORIZED || response.getCode() == SC_FORBIDDEN)) {
-      if (log.isDebugEnabled()) {
-        log.debug("UAC user info request failed with auth-method=auto (HTTP {}), retrying with query",
-            response.getCode());
-      }
-      response = executeUserInfoRequest(t, AUTH_METHOD_QUERY);
-    }
-    if (response.getCode() != SC_OK) {
+    OAuthRequest request = new OAuthRequest(Verb.GET, resourceUrl);
+    service.signRequest(t, request);
+    Response response = request.send();
+    if (response.getCode() != HttpServletResponse.SC_OK) {
       throw new IOException(String.format("Status %s (%s) for request %s",
-          response.getCode(), response.getBody(), resourceUrl));
+          response.getCode(), response.getBody(), request.getUrl()));
     }
 
     String responseBody = response.getBody();
-    if (log.isDebugEnabled()) {
-      log.debug("UAC user info response: {}", responseBody);
-    }
+    log.info("UAC getUserInfo response (HTTP {}): {}", response.getCode(), responseBody);
 
     JsonElement userJson = JSON.newGson().fromJson(responseBody, JsonElement.class);
     if (userJson != null && userJson.isJsonObject()) {
@@ -166,6 +176,11 @@ class UacOAuthService implements OAuthServiceProvider {
 
       String email = extractField(jsonObject, "email", "mail", "emailAddress",
           "email_address", "userEmail", "user_email", "userMail", "workEmail");
+        if ((email == null || email.isEmpty()) && ldapUsername != null && !ldapUsername.isEmpty()) {
+        log.info(
+          "UAC email is null, username: {} will be used for account linking without email",
+          ldapUsername);
+        }
       String name = extractField(jsonObject, "name", "displayName",
           "display_name", "fullName", "realName");
 
@@ -181,20 +196,24 @@ class UacOAuthService implements OAuthServiceProvider {
       if (linkToExistingOpenIDAccounts) {
         gerritUsername = null;  // Don't create new username external ID
         claimedIdentity = "username:" + ldapUsername;  // Link to existing account
-        if (log.isInfoEnabled()) {
-          log.info("UAC OAuth: link-to-existing-openid-accounts=true, claimedIdentity: {}", claimedIdentity);
-        }
       } else {
         gerritUsername = ldapUsername;  // Create new account with username
         claimedIdentity = null;
       }
       String gerritFullname = getGerritFullname(name, ldapUsername);
 
-      if (log.isInfoEnabled()) {
-        log.info("UAC user mapping - UAC login: {}, UAC id: {}, ldapUsername: {}, email: {}, name: {}, gerritId: {}, gerritUsername: {}, gerritFullname: {}, claimedIdentity: {}, linkToExistingOpenIDAccounts: {}",
-            login, id, ldapUsername, email, name, gerritId, gerritUsername,
-            gerritFullname, claimedIdentity, linkToExistingOpenIDAccounts);
-      }
+      log.info(
+          "UAC user mapping - UAC login: {}, UAC id: {}, ldapUsername: {}, email: {}, name: {}, gerritId: {}, gerritUsername: {}, gerritFullname: {}, claimedIdentity: {}, linkToExistingOpenIDAccounts: {}",
+          login,
+          id,
+          ldapUsername,
+          email,
+          name,
+          gerritId,
+          gerritUsername,
+          gerritFullname,
+          claimedIdentity,
+          linkToExistingOpenIDAccounts);
 
       return new OAuthUserInfo(gerritId, gerritUsername, email,
           gerritFullname, claimedIdentity);
@@ -204,62 +223,6 @@ class UacOAuthService implements OAuthServiceProvider {
         "Invalid JSON '%s': not a JSON Object", userJson));
   }
 
-  private String requireUrl(String url, String label, String pluginName) {
-    if (url == null || url.trim().isEmpty()) {
-      throw new ProvisionException(label + " is required for UAC OAuth provider. "
-          + "Please configure " + label.toLowerCase().replace(" ", "-")
-          + " in [plugin \"" + pluginName + CONFIG_SUFFIX + "\"]");
-    }
-    // Trim and remove surrounding quotes if present (Gerrit 2.13 config parsing issue)
-    String trimmed = url.trim();
-    if (trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
-      trimmed = trimmed.substring(1, trimmed.length() - 1).trim();
-    }
-    if (trimmed.startsWith("'") && trimmed.endsWith("'")) {
-      trimmed = trimmed.substring(1, trimmed.length() - 1).trim();
-    }
-    try {
-      URI uri = URI.create(trimmed);
-      if (!uri.isAbsolute()) {
-        throw new ProvisionException(label + " must be absolute URL: " + trimmed);
-      }
-      // Ensure URL starts with http:// or https://
-      if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
-        throw new ProvisionException(label + " must start with http:// or https://: " + trimmed);
-      }
-    } catch (IllegalArgumentException e) {
-      throw new ProvisionException(
-          "Invalid URL format in UAC OAuth configuration: " + e.getMessage() + " - URL: '" + trimmed + "'", e);
-    }
-    if (log.isDebugEnabled()) {
-      log.debug("UAC OAuth {} validated: {}", label, trimmed);
-    }
-    return trimmed;
-  }
-
-  private String parseAuthMethod(String value) {
-    if (value == null || value.trim().isEmpty()) {
-      return AUTH_METHOD_AUTO;
-    }
-    String normalized = value.trim().toLowerCase();
-    if (AUTH_METHOD_HEADER.equals(normalized)
-        || AUTH_METHOD_QUERY.equals(normalized)
-        || AUTH_METHOD_AUTO.equals(normalized)) {
-      return normalized;
-    }
-    log.warn("Unknown UAC auth-method '{}', falling back to 'auto'", value);
-    return AUTH_METHOD_AUTO;
-  }
-
-  private Response executeUserInfoRequest(Token token, String method) {
-    OAuthRequest request = new OAuthRequest(Verb.GET, resourceUrl);
-    if (AUTH_METHOD_HEADER.equals(method) || AUTH_METHOD_AUTO.equals(method)) {
-      request.addHeader("Authorization", "Bearer " + token.getToken());
-    } else {
-      service.signRequest(token, request);
-    }
-    return request.send();
-  }
 
   private JsonObject resolveUserObject(JsonObject root) {
     if (hasAnyField(root, "id", "userId", "user_id", "userid", "login",
@@ -322,11 +285,7 @@ class UacOAuthService implements OAuthServiceProvider {
 
   @Override
   public String getAuthorizationUrl() {
-    String authUrl = service.getAuthorizationUrl(null);
-    if (log.isInfoEnabled()) {
-      log.info("UAC OAuth authorization URL: {}", authUrl);
-    }
-    return authUrl;
+    return service.getAuthorizationUrl(null);
   }
 
   @Override
