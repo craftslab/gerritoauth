@@ -41,13 +41,14 @@ public class UacApi extends DefaultApi20 {
   private final String authorizeUrl;
 
   public UacApi(String tokenUrl, String authorizeUrl) {
-    this.tokenUrl = tokenUrl;
-    this.authorizeUrl = authorizeUrl;
-    if (!tokenUrl.startsWith("http://") && !tokenUrl.startsWith("https://")) {
-      throw new IllegalArgumentException("Token URL must start with http:// or https://: " + tokenUrl);
+    // URLs should already be validated by UacOAuthService, but ensure they're clean
+    this.tokenUrl = tokenUrl.trim();
+    this.authorizeUrl = authorizeUrl.trim();
+    if (!this.tokenUrl.startsWith("http://") && !this.tokenUrl.startsWith("https://")) {
+      throw new IllegalArgumentException("Token URL must start with http:// or https://: " + this.tokenUrl);
     }
-    if (!authorizeUrl.startsWith("http://") && !authorizeUrl.startsWith("https://")) {
-      throw new IllegalArgumentException("Authorize URL must start with http:// or https://: " + authorizeUrl);
+    if (!this.authorizeUrl.startsWith("http://") && !this.authorizeUrl.startsWith("https://")) {
+      throw new IllegalArgumentException("Authorize URL must start with http:// or https://: " + this.authorizeUrl);
     }
   }
 
