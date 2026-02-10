@@ -43,6 +43,12 @@ public class UacApi extends DefaultApi20 {
   public UacApi(String tokenUrl, String authorizeUrl) {
     this.tokenUrl = tokenUrl;
     this.authorizeUrl = authorizeUrl;
+    if (!tokenUrl.startsWith("http://") && !tokenUrl.startsWith("https://")) {
+      throw new IllegalArgumentException("Token URL must start with http:// or https://: " + tokenUrl);
+    }
+    if (!authorizeUrl.startsWith("http://") && !authorizeUrl.startsWith("https://")) {
+      throw new IllegalArgumentException("Authorize URL must start with http:// or https://: " + authorizeUrl);
+    }
   }
 
   @Override
@@ -63,7 +69,9 @@ public class UacApi extends DefaultApi20 {
     if (config.hasScope()) {
       url.append("&scope=").append(OAuthEncoder.encode(config.getScope()));
     }
-    return url.toString();
+    String result = url.toString();
+    // Note: state parameter will be added by Gerrit's OAuth infrastructure
+    return result;
   }
 
   @Override

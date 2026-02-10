@@ -97,6 +97,9 @@ class InitOAuth implements InitStep {
       uacOAuthProviderSection.string("UAC Token URL", TOKEN_URL, null);
       uacOAuthProviderSection.string("UAC Authorize URL", AUTHORIZE_URL, null);
       uacOAuthProviderSection.string("UAC Resource URL", RESOURCE_URL, null);
+      uacOAuthProviderSection.string("UAC Domain (optional, for callback URL override)", DOMAIN, null);
+      uacOAuthProviderSection.string("Link to existing OpenID accounts",
+          LINK_TO_EXISTING_OPENID_ACCOUNT, "false");
     }
   }
 
