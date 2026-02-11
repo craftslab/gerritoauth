@@ -104,3 +104,8 @@ EXPECTED_ACCOUNT_ID=1000001 \
 
 - The script does not perform the OAuth browser flow; run `MODE=post` only after the user has logged in via UAC OAuth.
 - If your UAC external ID format differs, set `UAC_EXTERNAL_ID` explicitly.
+- To mark a user inactive in Gerrit, run `ssh -p <port> <host> gerrit set-account --inactive <USER>`.
+
+## Reference
+
+- [gerrit-set-account](https://gerrit-documentation.storage.googleapis.com/Documentation/2.13.9/cmd-set-account.html)
