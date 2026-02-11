@@ -58,6 +58,7 @@ class GitHubOAuthService implements OAuthServiceProvider {
 
   private static final String SCOPE = "user:email";
   private final boolean fixLegacyUserId;
+  private final boolean linkToExistingOpenIDAccounts;
   private final OAuthService service;
 
   @Inject
@@ -69,6 +70,8 @@ class GitHubOAuthService implements OAuthServiceProvider {
     String canonicalWebUrl = CharMatcher.is('/').trimTrailingFrom(
         urlProvider.get()) + "/";
     fixLegacyUserId = cfg.getBoolean(InitOAuth.FIX_LEGACY_USER_ID, false);
+    linkToExistingOpenIDAccounts = cfg.getBoolean(
+      InitOAuth.LINK_TO_EXISTING_OPENID_ACCOUNT, false);
     rootUrl = CharMatcher.is('/').trimTrailingFrom(
         cfg.getString(InitOAuth.ROOT_URL, GITHUB_ROOT_URL)) + "/";
     service = new ServiceBuilder()
@@ -121,11 +124,27 @@ class GitHubOAuthService implements OAuthServiceProvider {
       JsonElement email = jsonObject.get("email");
       JsonElement name = jsonObject.get("name");
       JsonElement login = jsonObject.get("login");
-        return new OAuthUserInfo(GITHUB_PROVIDER_PREFIX + id.getAsString(),
-          login == null || login.isJsonNull() ? null : login.getAsString(),
+      String loginName = login == null || login.isJsonNull()
+          ? null
+          : login.getAsString();
+      // When link-to-existing-openid-accounts is enabled:
+      // 1. Set username to NULL to prevent creating duplicate "username:XXX" external ID
+      // 2. Set claimedIdentity to "username:XXX" to tell Gerrit which account to link to
+      String gerritUsername;
+      String claimedIdentity;
+      if (linkToExistingOpenIDAccounts && loginName != null
+          && !loginName.isEmpty()) {
+        gerritUsername = null;  // Don't create new username external ID
+        claimedIdentity = "username:" + loginName;  // Link to existing account
+      } else {
+        gerritUsername = loginName;  // Create new account with username
+        claimedIdentity = fixLegacyUserId ? id.getAsString() : null;
+      }
+      return new OAuthUserInfo(GITHUB_PROVIDER_PREFIX + id.getAsString(),
+          gerritUsername,
           email == null || email.isJsonNull() ? null : email.getAsString(),
           name == null || name.isJsonNull() ? null : name.getAsString(),
-          fixLegacyUserId ? id.getAsString() : null);
+          claimedIdentity);
     } else {
         throw new IOException(String.format(
             "Invalid JSON '%s': not a JSON Object", userJson));

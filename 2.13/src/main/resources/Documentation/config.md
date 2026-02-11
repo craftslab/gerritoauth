@@ -21,6 +21,7 @@ appended with provider suffix: e.g. `-google-oauth` or `-github-oauth`:
   [plugin "@PLUGIN@-github-oauth"]
     client-id = "<client-id>"
     client-secret = "<client-secret>"
+    link-to-existing-openid-accounts = true
 
   [plugin "@PLUGIN@-cas-oauth"]
     root-url = "<cas url>"
@@ -41,6 +42,15 @@ plugin.gerrit-oauth-provider-google-oauth.link-to-existing-openid-accounts = tru
 ```
 
 to Google OAuth configuration section.
+
+GitHub OAuth provider can optionally link OAuth identities to existing
+Gerrit accounts by matching the username. This prevents creating a new
+account when the username is already present (e.g. from LDAP). Enable it
+by adding:
+
+```
+plugin.gerrit-oauth-provider-github-oauth.link-to-existing-openid-accounts = true
+```
 
 It is possile to restrict sign-in to accounts of one (hosted) domain for
 Google OAuth. The `domain` option can be added:
