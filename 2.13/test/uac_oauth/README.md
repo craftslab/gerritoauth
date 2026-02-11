@@ -11,8 +11,56 @@ This folder contains a bash test script that validates UAC OAuth behavior for Ge
 ## Requirements
 
 - Gerrit 2.13 running with the UAC OAuth plugin.
-- An existing LDAP-linked Gerrit account.
+- An LDAP server reachable by Gerrit.
+- An LDAP-linked Gerrit account created via LDAP auth before OAuth.
 - Admin HTTP credentials for REST API access.
+
+## LDAP server setup (test)
+
+Use a local OpenLDAP container to create the LDAP user and verify LDAP auth before OAuth.
+
+```bash
+docker run -d --name test-ldap \
+	-p 389:389 -p 636:636 \
+	-e LDAP_ORGANISATION="Example" \
+	-e LDAP_DOMAIN="example.org" \
+	-e LDAP_ADMIN_PASSWORD="admin" \
+	osixia/openldap:1.5.0
+```
+
+Create a test user (adjust DN to match your Gerrit LDAP config):
+
+```bash
+cat <<'EOF' | ldapadd -x -H ldap://localhost:389 \
+	-D "cn=admin,dc=example,dc=org" -w admin
+dn: uid=ldapuser,dc=example,dc=org
+objectClass: inetOrgPerson
+sn: User
+cn: LDAP User
+uid: ldapuser
+mail: ldapuser@example.org
+userPassword: ldappass
+EOF
+```
+
+Before running this test, log in to Gerrit using LDAP auth so the LDAP account is created and note the resulting account ID (use it as `EXPECTED_ACCOUNT_ID`).
+
+## Gerrit LDAP config example
+
+Minimal `gerrit.config` snippet that matches the test OpenLDAP container above:
+
+```ini
+[auth]
+	type = LDAP
+[ldap]
+	server = ldap://localhost:389
+	username = cn=admin,dc=example,dc=org
+	password = admin
+	accountBase = dc=example,dc=org
+	accountPattern = (uid=${username})
+	accountFullName = cn
+	accountEmailAddress = mail
+```
 
 ## Environment variables
 
