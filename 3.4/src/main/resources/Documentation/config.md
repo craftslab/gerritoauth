@@ -22,6 +22,7 @@ appended with provider suffix: e.g. `-google-oauth` or `-github-oauth`:
     root-url = "<github url>" # https://github.com/ or https://git.company.com/
     client-id = "<client-id>"
     client-secret = "<client-secret>"
+    link-to-existing-openid-accounts = false
 
   [plugin "@PLUGIN@-cas-oauth"]
     root-url = "<cas url>"
@@ -186,6 +187,17 @@ After application is registered, the page will show generated client id and
 secret.
 
 ![Generated client id and secret](images/github-2.png)
+
+By default the GitHub OAuth provider uses GitHub login as Gerrit username.
+When you want to link GitHub OAuth logins to pre-existing Gerrit accounts that
+already own `username:<login>`, enable:
+
+```
+plugin.@PLUGIN@-github-oauth.link-to-existing-openid-accounts = true
+```
+
+With this option enabled, the provider does not create a new username external ID
+and instead claims `username:<github_login>` for account linking.
 
 ### CAS
 

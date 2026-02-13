@@ -54,6 +54,7 @@ class GitHubOAuthService implements OAuthServiceProvider {
 
   static final String SCOPE = "user:email";
   private final boolean fixLegacyUserId;
+  private final boolean linkToExistingOpenIDAccounts;
   private final OAuth20Service service;
 
   @Inject
@@ -64,6 +65,8 @@ class GitHubOAuthService implements OAuthServiceProvider {
     PluginConfig cfg = cfgFactory.getFromGerritConfig(pluginName + CONFIG_SUFFIX);
     String canonicalWebUrl = CharMatcher.is('/').trimTrailingFrom(urlProvider.get()) + "/";
     fixLegacyUserId = cfg.getBoolean(InitOAuth.FIX_LEGACY_USER_ID, false);
+    linkToExistingOpenIDAccounts =
+      cfg.getBoolean(InitOAuth.LINK_TO_EXISTING_OPENID_ACCOUNT, false);
     rootUrl =
         CharMatcher.is('/').trimTrailingFrom(cfg.getString(InitOAuth.ROOT_URL, GITHUB_ROOT_URL))
             + "/";
@@ -113,12 +116,22 @@ class GitHubOAuthService implements OAuthServiceProvider {
         JsonElement email = jsonObject.get("email");
         JsonElement name = jsonObject.get("name");
         JsonElement login = jsonObject.get("login");
+        String loginName = login == null || login.isJsonNull() ? null : login.getAsString();
+        String gerritUsername;
+        String claimedIdentity;
+        if (linkToExistingOpenIDAccounts && loginName != null && !loginName.isEmpty()) {
+          gerritUsername = null;
+          claimedIdentity = "username:" + loginName;
+        } else {
+          gerritUsername = loginName;
+          claimedIdentity = fixLegacyUserId ? id.getAsString() : null;
+        }
         return new OAuthUserInfo(
             GITHUB_PROVIDER_PREFIX + id.getAsString(),
-            login == null || login.isJsonNull() ? null : login.getAsString(),
+            gerritUsername,
             email == null || email.isJsonNull() ? null : email.getAsString(),
             name == null || name.isJsonNull() ? null : name.getAsString(),
-            fixLegacyUserId ? id.getAsString() : null);
+            claimedIdentity);
       }
     } catch (ExecutionException | InterruptedException e) {
       throw new RuntimeException("Cannot retrieve user info resource", e);
